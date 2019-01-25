@@ -42,11 +42,12 @@ class PcaWithScaling(DataHandler):
         self.mean = None
         self.mode_number = 0
         self.number_of_std = 1
-        self.decompose_with_pca()
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
 
     def decompose_with_pca(self):
-
+        """Principal component analysis run on centered data. Assumes that self.X is in a shape established for
+        scikit-learn - a 2D data frame with samples as rows and features as columns.
+        """
         scaler = StandardScaler()
         pca = PCA()
 
@@ -54,11 +55,11 @@ class PcaWithScaling(DataHandler):
             ('scale', scaler),
             ('pca', pca)])
         scaled_pca.set_params(pca__n_components=self.number_of_components
-                              , scale__with_std=self.scale_with_std
-                              )
+                              , scale__with_std=self.scale_with_std  # False for shape mode visualization, but should be
+                              )                                      # true for discriminant or regression analysis.
         self.transformed_X = scaled_pca.fit_transform(self.X)
         self.explained_variance = scaled_pca.named_steps['pca'].explained_variance_
-        self.number_of_components = self.explained_variance.shape[0] - 1  # The last component is irrelevant
+        self.number_of_components = self.explained_variance.shape[0] - 1  # -1 because the last component is irrelevant
         self.normalized_explained_variance = scaled_pca.named_steps['pca'].explained_variance_ratio_
         self.cumulative_variance = [np.sum(self.normalized_explained_variance[:i+1]) for i in
                                     range(len(self.normalized_explained_variance))]
@@ -69,6 +70,12 @@ class PcaWithScaling(DataHandler):
         return weight * self.components[self.mode_number, :]
 
     def get_extremes_of_mode(self, mode_number=0):
+        """
+        Calculates extreme loadings along a given mode. Useful for statistical shape analysis.
+        :param mode_number: The number of the mode of interest.
+        :return: 2D numpy array with positive [0, :] and negative [1, :] extreme calculated according to the number of
+        standard deviations in the provided mode.
+        """
         self.mode_number = mode_number
         weight = self.number_of_std * np.std(self.transformed_X[self.mode_number, :])
         positive_extreme = self.get_weighted_mode(weight).reshape((1, -1))
@@ -80,6 +87,7 @@ class PcaWithScaling(DataHandler):
         for component in range(self.number_of_components):
             self.extremes[2*component:2*component+2, :] = self.get_extremes_of_mode(component)
 
+    # TODO: These funcions could be transformed to be generic for other types of decomposition
     def save_transformed_data(self):
         self.save_result('modes.csv', self.transformed_X)
 
@@ -106,6 +114,7 @@ if __name__ == "__main__":
                                 'output_separate_tmp10_def10_prttpe8_aligned')
     data_filename = 'DeterministicAtlas__EstimatedParameters__Momenta_Table.csv'
     momenta_pca = PcaWithScaling(path_to_data, data_filename)
+    momenta_pca.decompose_with_pca()
     momenta_pca.get_all_extremes(3)
     momenta_pca.save_all_decomposition_results()
     print('components shape: {}'.format(momenta_pca.components.shape))

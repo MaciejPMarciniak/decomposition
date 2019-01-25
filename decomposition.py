@@ -72,7 +72,9 @@ class PcaWithScaling(DataHandler):
     def get_extremes_of_mode(self, mode_number=0):
         """
         Calculates extreme loadings along a given mode. Useful for statistical shape analysis.
+
         :param mode_number: The number of the mode of interest.
+
         :return: 2D numpy array with positive [0, :] and negative [1, :] extreme calculated according to the number of
         standard deviations in the provided mode.
         """

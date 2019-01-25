@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 
-class DataReader:
+class DataHandler:
 
     def __init__(self, covariates_data_path=None, covariates_data_filename=None, reference_data_path=None):
         self.covariates_data_path = covariates_data_path
@@ -25,7 +25,7 @@ class DataReader:
         np.savetxt(os.path.join(output_directory, output_filename), data_to_save, delimiter=',')
 
 
-class PcaWithScaling(DataReader):
+class PcaWithScaling(DataHandler):
 
     def __init__(self, dataset_path=None, dataset_filename=None, number_of_components=None, scale_with_std=False):
         self.dataset_path = dataset_path
@@ -42,10 +42,10 @@ class PcaWithScaling(DataReader):
         self.mean = None
         self.mode_number = 0
         self.number_of_std = 1
-        self.decompose()
+        self.decompose_with_pca()
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
 
-    def decompose(self):
+    def decompose_with_pca(self):
 
         scaler = StandardScaler()
         pca = PCA()

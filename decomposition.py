@@ -14,6 +14,7 @@ class DataHandler:
         self.X = np.genfromtxt(os.path.join(covariates_data_path, covariates_data_filename), delimiter=',', )
 
         if reference_data_path is not None:
+            #TODO: Allow for response data to be packed in the same file as the covariates
             self.y = np.genfromtxt(covariates_data_path, delimiter=',')
             assert self.X.shape[0] == self.y.shape[0], ('The number of samples in covariate data and reference data is '
                                                         'not the same. Check the paths and relevant files.')
@@ -45,7 +46,8 @@ class PcaWithScaling(DataHandler):
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
 
     def decompose_with_pca(self):
-        """Principal component analysis run on centered data. Assumes that self.X is in a shape established for
+        """
+        Principal component analysis run on centered data. Assumes that self.X is in a shape established for
         scikit-learn - a 2D data frame with samples as rows and features as columns.
         """
         scaler = StandardScaler()
@@ -65,6 +67,30 @@ class PcaWithScaling(DataHandler):
                                     range(len(self.normalized_explained_variance))]
         self.components = scaled_pca.named_steps['pca'].components_
         self.mean = scaled_pca.named_steps['pca'].mean_
+
+    def decompose_2_classes_with_pls(self):
+
+        # No matter how classes are encoded, they are turned to 1 and -1
+        classes, counts = np.unique(self.y, return_counts=True)
+        self.y[self.y == classes[0]] = 1
+        self.y[self.y == classes[1]] = -1
+        print(self.y)
+        counts_ratio = counts[0]/counts[1]
+        print(counts_ratio)
+
+        # Centering the covariates
+        X_mu = (np.mean(self.X[self.y == 1, :], axis=0) + np.mean(self.X[self.y == -1, :], axis=0)) / 2
+        print(X_mu)
+        X_mu_prime = (counts_ratio - 1) / (counts_ratio + 1) * np.mean(self.X[self.y == 1, :], axis=0)
+        print(X_mu_prime)
+        assert (counts_ratio -1)/(counts_ratio + 1)*np.mean(self.X[self.y == 1, :], axis=0) == X_mu
+        centered_X = self.X - X_mu
+
+        w = centered_X.T @ self.y
+        t = centered_X @ w / np.linalg.norm(w)
+        # TODO: p, q, residuals, prediction
+
+
 
     def get_weighted_mode(self, weight=np.array(1)):
         return weight * self.components[self.mode_number, :]

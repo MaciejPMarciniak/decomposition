@@ -34,7 +34,6 @@ class PcaWithScaling(DataHandler):
         self.dataset_filename = dataset_filename
         self.scale_with_std = scale_with_std
         self.number_of_components = number_of_components if number_of_components is not None else min(self.X.shape)
-        print('Number of components: {}'.format(self.number_of_components))
         self.transformed_X = None
         self.explained_variance = None
         self.normalized_explained_variance = None
@@ -44,13 +43,7 @@ class PcaWithScaling(DataHandler):
         self.mode_number = 0
         self.number_of_std = 1
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
-        # PLS factors
-        self.X_centered = np.zeros(self.X.shape)
-        self.W = np.zeros((self.X.shape[1], self.number_of_components))
-        self.T = np.zeros((self.X.shape[0], self.number_of_components))
-        self.P = np.zeros((self.number_of_components, self.X.shape[1]))
-        self.q = np.zeros((self.number_of_components, 1))
-        self.E, self.f, self.b = (None,)*3
+
 
     def decompose_with_pca(self):
         """
@@ -74,6 +67,66 @@ class PcaWithScaling(DataHandler):
                                     range(len(self.normalized_explained_variance))]
         self.components = scaled_pca.named_steps['pca'].components_
         self.mean = scaled_pca.named_steps['pca'].mean_
+
+    def get_weighted_mode(self, weight=np.array(1)):
+        return weight * self.components[self.mode_number, :]
+
+    def get_extremes_of_mode(self, mode_number=0):
+        """
+        Calculates extreme loadings along a given mode. Useful for statistical shape analysis.
+
+        :param mode_number: The number of the mode of interest.
+
+        :return: 2D numpy array with positive [0, :] and negative [1, :] extreme calculated according to the number of
+        standard deviations in the provided mode.
+        """
+        self.mode_number = mode_number
+        weight = self.number_of_std * np.std(self.transformed_X[self.mode_number, :])
+        positive_extreme = self.get_weighted_mode(weight).reshape((1, -1))
+        negative_extreme = -positive_extreme
+        return np.concatenate((positive_extreme, negative_extreme), axis=0)
+
+    def get_all_extremes(self, number_of_std=1):
+        self.number_of_std = number_of_std
+        for component in range(self.number_of_components):
+            self.extremes[2*component:2*component+2, :] = self.get_extremes_of_mode(component)
+
+    # TODO: These funcions could be transformed to be generic for other types of decomposition
+    def save_transformed_data(self):
+        self.save_result('modes.csv', self.transformed_X)
+
+    def save_extremes(self):
+        self.save_result('extreme_momenta.csv', self.extremes)
+
+    def save_eigenvectors(self):
+        self.save_result('eigenvectors.csv', self.components)
+
+    def save_explained_variance(self):
+        self.save_result('explained_variance.csv', self.explained_variance)
+        self.save_result('normalized_explained_variance.csv', self.normalized_explained_variance)
+
+    def save_all_decomposition_results(self):
+        self.save_eigenvectors()
+        self.save_explained_variance()
+        self.save_extremes()
+        self.save_transformed_data()
+
+
+class PLS2Classes(DataHandler):
+
+    def __init__(self, dataset_path=None, dataset_filename=None, number_of_components=None,):
+        super().__init__(dataset_path, dataset_filename)
+        self.dataset_path = dataset_path
+        self.dataset_filename = dataset_filename
+        self.number_of_components = number_of_components if number_of_components is not None else min(self.X.shape)
+        print('Number of components: {}'.format(self.number_of_components))
+        # PLS factors
+        self.X_centered = np.zeros(self.X.shape)
+        self.W = np.zeros((self.X.shape[1], self.number_of_components))
+        self.T = np.zeros((self.X.shape[0], self.number_of_components))
+        self.P = np.zeros((self.number_of_components, self.X.shape[1]))
+        self.q = np.zeros((self.number_of_components, 1))
+        self.E, self.f, self.b = (None,) * 3
 
     @ staticmethod
     def get_pls_factors_vectors(self, covariates, response):
@@ -128,52 +181,18 @@ class PcaWithScaling(DataHandler):
         print(X_mu)
         X_mu_prime = (counts_ratio - 1) / (counts_ratio + 1) * np.mean(self.X[self.y == 1, :], axis=0)
         print(X_mu_prime)
-        assert (counts_ratio -1)/(counts_ratio + 1)*np.mean(self.X[self.y == 1, :], axis=0) == X_mu
+        assert (counts_ratio - 1)/(counts_ratio + 1)*np.mean(self.X[self.y == 1, :], axis=0) == X_mu
         self.X_centered = self.X - X_mu
 
-    def get_weighted_mode(self, weight=np.array(1)):
-        return weight * self.components[self.mode_number, :]
-
-    def get_extremes_of_mode(self, mode_number=0):
-        """
-        Calculates extreme loadings along a given mode. Useful for statistical shape analysis.
-
-        :param mode_number: The number of the mode of interest.
-
-        :return: 2D numpy array with positive [0, :] and negative [1, :] extreme calculated according to the number of
-        standard deviations in the provided mode.
-        """
-        self.mode_number = mode_number
-        weight = self.number_of_std * np.std(self.transformed_X[self.mode_number, :])
-        positive_extreme = self.get_weighted_mode(weight).reshape((1, -1))
-        negative_extreme = -positive_extreme
-        return np.concatenate((positive_extreme, negative_extreme), axis=0)
-
-    def get_all_extremes(self, number_of_std=1):
-        self.number_of_std = number_of_std
-        for component in range(self.number_of_components):
-            self.extremes[2*component:2*component+2, :] = self.get_extremes_of_mode(component)
-
-    # TODO: These funcions could be transformed to be generic for other types of decomposition
-    def save_transformed_data(self):
-        self.save_result('modes.csv', self.transformed_X)
-
-    def save_extremes(self):
-        self.save_result('extreme_momenta.csv', self.extremes)
-
-    def save_eigenvectors(self):
-        self.save_result('eigenvectors.csv', self.components)
-
-    def save_explained_variance(self):
-        self.save_result('explained_variance.csv', self.explained_variance)
-        self.save_result('normalized_explained_variance.csv', self.normalized_explained_variance)
-
-    def save_all_decomposition_results(self):
-        self.save_eigenvectors()
-        self.save_explained_variance()
-        self.save_extremes()
-        self.save_transformed_data()
-
+        self.get_pls_factors(self.X_centered, self.y)
+        print('W: {}'.format(self.W.shape))
+        print('T: {}'.format(self.T.shape))
+        print('P: {}'.format(self.P.shape))
+        print('q: {}'.format(self.q.shape))
+        print('E: {}'.format(self.E.shape))
+        print('f: {}'.format(self.f.shape))
+        print('b: {}'.format(self.b.shape))
+        
 
 if __name__ == "__main__":
 

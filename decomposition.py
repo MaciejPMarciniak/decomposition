@@ -29,12 +29,12 @@ class DataHandler:
 class PcaWithScaling(DataHandler):
 
     def __init__(self, dataset_path=None, dataset_filename=None, number_of_components=None, scale_with_std=False):
+        super().__init__(dataset_path, dataset_filename)
         self.dataset_path = dataset_path
         self.dataset_filename = dataset_filename
-        self.number_of_components = number_of_components
         self.scale_with_std = scale_with_std
-        super().__init__(dataset_path, dataset_filename)
-
+        self.number_of_components = number_of_components if number_of_components is not None else min(self.X.shape)
+        print('Number of components: {}'.format(self.number_of_components))
         self.transformed_X = None
         self.explained_variance = None
         self.normalized_explained_variance = None
@@ -44,6 +44,13 @@ class PcaWithScaling(DataHandler):
         self.mode_number = 0
         self.number_of_std = 1
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
+        # PLS factors
+        self.X_centered = np.zeros(self.X.shape)
+        self.W = np.zeros((self.X.shape[1], self.number_of_components))
+        self.T = np.zeros((self.X.shape[0], self.number_of_components))
+        self.P = np.zeros((self.number_of_components, self.X.shape[1]))
+        self.q = np.zeros((self.number_of_components, 1))
+        self.E, self.f, self.b = (None,)*3
 
     def decompose_with_pca(self):
         """
@@ -68,6 +75,44 @@ class PcaWithScaling(DataHandler):
         self.components = scaled_pca.named_steps['pca'].components_
         self.mean = scaled_pca.named_steps['pca'].mean_
 
+    @ staticmethod
+    def get_pls_factors_vectors(self, covariates, response):
+        X_current = covariates  # could be original or residual
+        y_current = response  # could be original or residual
+
+        w = X_current.T @ y_current  # weight vector
+        t = X_current @ w / np.linalg.norm(w)  # score vector
+        t_squared_norm = np.sum(np.square(t))
+        p = t.T @ X_current / t_squared_norm  # X loadings
+        q = y_current.T @ t / t_squared_norm  # y loading (scalar)
+
+        X_resid = X_current - t @ p  # residual data matrix
+        y_resid = y_current - t @ q  # residual response vector
+
+        return w, t, p, q, X_resid, y_resid
+
+    def get_pls_factors(self, _x_centered, _y):
+        X_current = _x_centered
+        y_current = _y
+
+        for cmpnt in range(self.number_of_components):
+            _w, _t, _p, _q, X_current, y_current = self.get_pls_factors_vectors(X_current, y_current)
+            self.W[:, cmpnt] = _w
+            self.T[:, cmpnt] = _t
+            self.P[cmpnt, :] = _p
+            self.q[cmpnt] = _q
+
+        self.E = X_current  # Residual X
+        self.f = y_current  # residual y
+        self.b = self.W @ np.linalg.inv(self.P @ self.W) @ self.q + self.f  # relationship between X and y
+
+    def get_prediction_2_classes_with_pls(self, samples):
+        estimation = []
+
+        for sample in samples:
+            estimation.append(1 if sample @ self.b >= 0 else -1)
+        return estimation
+
     def decompose_2_classes_with_pls(self):
 
         # No matter how classes are encoded, they are turned to 1 and -1
@@ -84,13 +129,7 @@ class PcaWithScaling(DataHandler):
         X_mu_prime = (counts_ratio - 1) / (counts_ratio + 1) * np.mean(self.X[self.y == 1, :], axis=0)
         print(X_mu_prime)
         assert (counts_ratio -1)/(counts_ratio + 1)*np.mean(self.X[self.y == 1, :], axis=0) == X_mu
-        centered_X = self.X - X_mu
-
-        w = centered_X.T @ self.y
-        t = centered_X @ w / np.linalg.norm(w)
-        # TODO: p, q, residuals, prediction
-
-
+        self.X_centered = self.X - X_mu
 
     def get_weighted_mode(self, weight=np.array(1)):
         return weight * self.components[self.mode_number, :]

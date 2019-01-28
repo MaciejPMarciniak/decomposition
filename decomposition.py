@@ -1,7 +1,9 @@
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
+from sklearn.cross_decomposition import PLSRegression
 from sklearn.pipeline import Pipeline
+from sklearn.datasets import load_iris
 import os
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -9,15 +11,24 @@ import matplotlib.pyplot as plt
 
 class DataHandler:
 
-    def __init__(self, covariates_data_path=None, covariates_data_filename=None, reference_data_path=None):
+    def __init__(self, covariates_data_path=None, covariates_data_filename=None, reference_data_path=None, X=None,
+                 y=None):
         self.covariates_data_path = covariates_data_path
-        self.X = np.genfromtxt(os.path.join(covariates_data_path, covariates_data_filename), delimiter=',', )
+        if X is not None:
+            self.X = X
+        else:
+            self.X = np.genfromtxt(os.path.join(covariates_data_path, covariates_data_filename), delimiter=',', )
 
-        if reference_data_path is not None:
-            #TODO: Allow for response data to be packed in the same file as the covariates
+        if y is not None:
+            self.y = y
+            assert self.X.shape[0] == self.y.shape[0], ('The number of samples in covariate data and reference data is '
+                                                        'not the same. Check the input data.')
+        elif reference_data_path is not None:
+            print(reference_data_path)
+            # TODO: Allow for response data to be packed in the same file as the covariates
             self.y = np.genfromtxt(covariates_data_path, delimiter=',')
             assert self.X.shape[0] == self.y.shape[0], ('The number of samples in covariate data and reference data is '
-                                                        'not the same. Check the paths and relevant files.')
+                                                        'not the same. Check the input data.')
 
     def save_result(self, output_filename=None, data_to_save=None):
         output_directory = os.path.join(self.covariates_data_path, 'Decomposition')
@@ -43,7 +54,6 @@ class PcaWithScaling(DataHandler):
         self.mode_number = 0
         self.number_of_std = 1
         self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
-
 
     def decompose_with_pca(self):
         """
@@ -112,15 +122,16 @@ class PcaWithScaling(DataHandler):
         self.save_transformed_data()
 
 
-class PLS2Classes(DataHandler):
+class PLSBinaryClassification(DataHandler):
 
-    def __init__(self, dataset_path=None, dataset_filename=None, number_of_components=None,):
-        super().__init__(dataset_path, dataset_filename)
+    def __init__(self, dataset_path=None, dataset_filename=None, number_of_components=None, X=None, y=None):
+        super().__init__(dataset_path, dataset_filename, X=X, y=y)
         self.dataset_path = dataset_path
         self.dataset_filename = dataset_filename
         self.number_of_components = number_of_components if number_of_components is not None else min(self.X.shape)
+        self.count_balance = 0
         print('Number of components: {}'.format(self.number_of_components))
-        # PLS factors
+        # PLS-DAfactors
         self.X_centered = np.zeros(self.X.shape)
         self.W = np.zeros((self.X.shape[1], self.number_of_components))
         self.T = np.zeros((self.X.shape[0], self.number_of_components))
@@ -129,11 +140,11 @@ class PLS2Classes(DataHandler):
         self.E, self.f, self.b = (None,) * 3
 
     @ staticmethod
-    def get_pls_factors_vectors(self, covariates, response):
+    def get_pls_factors_vectors_binary(covariates, response):
         X_current = covariates  # could be original or residual
-        y_current = response  # could be original or residual
+        y_current = response    # could be original or residual
 
-        w = X_current.T @ y_current  # weight vector
+        w = (X_current.T @ y_current).reshape(-1, 1)  # weight vector
         t = X_current @ w / np.linalg.norm(w)  # score vector
         t_squared_norm = np.sum(np.square(t))
         p = t.T @ X_current / t_squared_norm  # X loadings
@@ -144,70 +155,75 @@ class PLS2Classes(DataHandler):
 
         return w, t, p, q, X_resid, y_resid
 
-    def get_pls_factors(self, _x_centered, _y):
+    def get_pls_factors_binary(self, _x_centered, _y):
         X_current = _x_centered
         y_current = _y
 
-        for cmpnt in range(self.number_of_components):
-            _w, _t, _p, _q, X_current, y_current = self.get_pls_factors_vectors(X_current, y_current)
-            self.W[:, cmpnt] = _w
-            self.T[:, cmpnt] = _t
-            self.P[cmpnt, :] = _p
-            self.q[cmpnt] = _q
+        for component in range(self.number_of_components):
+            _w, _t, _p, _q, X_current, y_current = self.get_pls_factors_vectors_binary(X_current, y_current)
+            print(self.W[:, component])
+            self.W[:, component] = _w.squeeze()  # weights
+            self.T[:, component] = _t.squeeze()  # scores
+            self.P[component, :] = _p.squeeze()  # X loadings
+            self.q[component] = _q  # y loadings
 
         self.E = X_current  # Residual X
         self.f = y_current  # residual y
         self.b = self.W @ np.linalg.inv(self.P @ self.W) @ self.q + self.f  # relationship between X and y
 
-    def get_prediction_2_classes_with_pls(self, samples):
+    def get_predictions_binary(self, samples):
         estimation = []
-
         for sample in samples:
             estimation.append(1 if sample @ self.b >= 0 else -1)
         return estimation
 
-    def decompose_2_classes_with_pls(self):
+    def assign_proper_labels_binary(self, class_mask):
+        pos = self.y == class_mask[0]
+        neg = self.y == class_mask[1]
+        self.y[pos], self.y[neg] = 1, -1
 
-        # No matter how classes are encoded, they are turned to 1 and -1
+    def get_class_balance_binary(self):
         classes, counts = np.unique(self.y, return_counts=True)
-        self.y[self.y == classes[0]] = 1
-        self.y[self.y == classes[1]] = -1
-        print(self.y)
-        counts_ratio = counts[0]/counts[1]
-        print(counts_ratio)
+        assert len(classes) == 2, 'There must be 2 classes in this decomposition. Check your inputs.'
+        # No matter how classes are encoded, they are turned to 1 and -1
+        self.assign_proper_labels_binary(class_mask=classes)
+        # To ensure proper boundary, centering must we weighted according to the balance of the classes
+        counts_ratio = counts[0] / counts[1]
+        self.count_balance = (counts_ratio - 1) / (counts_ratio + 1)
 
+    def decompose_with_pls(self, method='da'):
+        self.get_class_balance_binary()  # check the balance between classes
         # Centering the covariates
         X_mu = (np.mean(self.X[self.y == 1, :], axis=0) + np.mean(self.X[self.y == -1, :], axis=0)) / 2
-        print(X_mu)
-        X_mu_prime = (counts_ratio - 1) / (counts_ratio + 1) * np.mean(self.X[self.y == 1, :], axis=0)
-        print(X_mu_prime)
-        assert (counts_ratio - 1)/(counts_ratio + 1)*np.mean(self.X[self.y == 1, :], axis=0) == X_mu
         self.X_centered = self.X - X_mu
+        assert np.all(self.count_balance * np.mean(self.X_centered[self.y == 1, :], axis=0) -
+                      np.mean(self.X_centered, axis=0) <= 10.0e-9), \
+            'Classes are not centered properly. Check X centering rules.\n {}' \
+            .format(self.count_balance * np.mean(self.X_centered[self.y == 1, :], axis=0) -
+                    np.mean(self.X_centered, axis=0))
 
-        self.get_pls_factors(self.X_centered, self.y)
-        print('W: {}'.format(self.W.shape))
-        print('T: {}'.format(self.T.shape))
-        print('P: {}'.format(self.P.shape))
-        print('q: {}'.format(self.q.shape))
-        print('E: {}'.format(self.E.shape))
-        print('f: {}'.format(self.f.shape))
-        print('b: {}'.format(self.b.shape))
-        
+        if method == 'da':
+            self.get_pls_factors_binary(self.X_centered, self.y)
+        elif method == 'scikit':
+            plsr = PLSRegression(self.number_of_components, scale=False)
+            plsr.fit(pls.X_centered, pls.y)
+
 
 if __name__ == "__main__":
 
-    path_to_data = os.path.join(str(Path.home()), 'Deformetrica', 'deterministic_atlas_ct',
-                                'output_separate_tmp10_def10_prttpe8_aligned')
-    data_filename = 'DeterministicAtlas__EstimatedParameters__Momenta_Table.csv'
-    momenta_pca = PcaWithScaling(path_to_data, data_filename)
-    momenta_pca.decompose_with_pca()
-    momenta_pca.get_all_extremes(3)
-    momenta_pca.save_all_decomposition_results()
-    print('components shape: {}'.format(momenta_pca.components.shape))
-    print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
-    print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
-    print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
-    print('Mean max and mix: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
+    # -----PCA testing-------------------------------------------------------------------------------------------------
+    # path_to_data = os.path.join(str(Path.home()), 'Deformetrica', 'deterministic_atlas_ct',
+    #                             'output_separate_tmp10_def10_prttpe8_aligned')
+    # data_filename = 'DeterministicAtlas__EstimatedParameters__Momenta_Table.csv'
+    # momenta_pca = PcaWithScaling(path_to_data, data_filename)
+    # momenta_pca.decompose_with_pca()
+    # momenta_pca.get_all_extremes(3)
+    # momenta_pca.save_all_decomposition_results()
+    # print('components shape: {}'.format(momenta_pca.components.shape))
+    # print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
+    # print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
+    # print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
+    # print('Mean max and mix: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
 
     # plt.bar([*range(len(momenta_pca.normalized_explained_variance))], momenta_pca.normalized_explained_variance,
     #         alpha=0.7)
@@ -222,3 +238,36 @@ if __name__ == "__main__":
     # plt.xlabel('Mode 1')
     # plt.ylabel('Mode 2')
     # plt.show()
+    # ------------------------------------------------------------------------------------------------------------------
+
+    # -----PLS testing--------------------------------------------------------------------------------------------------
+    data, target = load_iris(return_X_y=True)
+    data = data[50:150, 2:4]
+    target = target[50:150]
+    pls = PLSBinaryClassification(X=data, y=target)
+    pls.decompose_with_pls(method='da')
+    new_x = pls.T @ pls.P + pls.E
+    plsr = PLSRegression(2, scale=False)
+    x_plsr, y_plsr = plsr.fit_transform(pls.X_centered, pls.y)
+
+    plt.scatter(x_plsr[pls.y == -1, 0], x_plsr[pls.y == -1, 1], c='red', marker='d')
+    plt.scatter(x_plsr[pls.y == 1, 0], x_plsr[pls.y == 1, 1], c='blue', marker='x')
+    x = np.linspace(-2, 2, 100)
+
+    print(new_x[:5, :])
+    print(x_plsr[:5, :])
+    print('W: {}'.format(pls.W))
+    print('T: {}'.format(pls.T.shape))
+    print('P: {}'.format(pls.P))
+    print('q: {}'.format(pls.q))
+    print('----------------')
+    print('Xload: {}'.format(plsr.x_loadings_))
+    print('yload: {}'.format(plsr.y_loadings_))
+    print('xw: {}'.format(plsr.x_weights_))
+    print('yw: {}'.format(plsr.y_weights_))
+    print('xr: {}'.format(plsr.x_rotations_))
+    print('yr: {}'.format(plsr.y_rotations_))
+
+    plt.plot(x, np.mean(pls.b[1])*x, 'k.-', linewidth=4)
+    plt.plot(x, plsr.coef_[1]*x, 'y.-')
+    plt.show()

@@ -161,7 +161,7 @@ class PLSBinaryClassification(DataHandler):
 
         for component in range(self.number_of_components):
             _w, _t, _p, _q, X_current, y_current = self.get_pls_factors_vectors_binary(X_current, y_current)
-            print(self.W[:, component])
+
             self.W[:, component] = _w.squeeze()  # weights
             self.T[:, component] = _t.squeeze()  # scores
             self.P[component, :] = _p.squeeze()  # X loadings
@@ -242,16 +242,16 @@ if __name__ == "__main__":
 
     # -----PLS testing--------------------------------------------------------------------------------------------------
     data, target = load_iris(return_X_y=True)
-    data = data[50:150, 2:4]
-    target = target[50:150]
+    data = data[0:100, 0:4]
+    target = target[0:100]
     pls = PLSBinaryClassification(X=data, y=target)
     pls.decompose_with_pls(method='da')
     new_x = pls.T @ pls.P + pls.E
-    plsr = PLSRegression(2, scale=False)
+    plsr = PLSRegression(4, scale=False)
     x_plsr, y_plsr = plsr.fit_transform(pls.X_centered, pls.y)
 
-    plt.scatter(x_plsr[pls.y == -1, 0], x_plsr[pls.y == -1, 1], c='red', marker='d')
-    plt.scatter(x_plsr[pls.y == 1, 0], x_plsr[pls.y == 1, 1], c='blue', marker='x')
+    plt.scatter(new_x[pls.y == -1, 2], new_x[pls.y == -1, 3], c='red', marker='d')
+    plt.scatter(new_x[pls.y == 1, 2], new_x[pls.y == 1, 3], c='blue', marker='x')
     x = np.linspace(-2, 2, 100)
 
     print(new_x[:5, :])
@@ -268,6 +268,6 @@ if __name__ == "__main__":
     print('xr: {}'.format(plsr.x_rotations_))
     print('yr: {}'.format(plsr.y_rotations_))
 
-    plt.plot(x, np.mean(pls.b[1])*x, 'k.-', linewidth=4)
-    plt.plot(x, plsr.coef_[1]*x, 'y.-')
+    plt.plot(x, np.mean(pls.b[3])*x, 'k.-', linewidth=4)
+    plt.plot(x, plsr.coef_[3]*x, 'y.-')
     plt.show()

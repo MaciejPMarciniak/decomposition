@@ -138,6 +138,7 @@ class PLSBinaryClassification(DataHandler):
         self.P = np.zeros((self.number_of_components, self.X.shape[1]))
         self.q = np.zeros((self.number_of_components, 1))
         self.E, self.f, self.b = (None,) * 3
+        self.orthogonal_remodelling_component_number = 0
 
     @ staticmethod
     def get_pls_factors_vectors_binary(covariates, response):
@@ -145,7 +146,8 @@ class PLSBinaryClassification(DataHandler):
         y_current = response    # could be original or residual
 
         w = (X_current.T @ y_current).reshape(-1, 1)  # weight vector
-        t = X_current @ w / np.linalg.norm(w)  # score vector
+        w /= np.linalg.norm(w)  # scaled weight vector
+        t = X_current @ w   # score vector
         t_squared_norm = np.sum(np.square(t))
         p = t.T @ X_current / t_squared_norm  # X loadings
         q = y_current.T @ t / t_squared_norm  # y loading (scalar)
@@ -208,6 +210,13 @@ class PLSBinaryClassification(DataHandler):
             plsr = PLSRegression(self.number_of_components, scale=False)
             plsr.fit(pls.X_centered, pls.y)
 
+    def get_weighted_component(self, weight=np.array(1)):
+        return weight * self.W[self.orthogonal_remodelling_component_number, :]  # weight comes from score distribution
+
+    
+
+
+
 
 if __name__ == "__main__":
 
@@ -246,28 +255,33 @@ if __name__ == "__main__":
     target = target[0:100]
     pls = PLSBinaryClassification(X=data, y=target)
     pls.decompose_with_pls(method='da')
-    new_x = pls.T @ pls.P + pls.E
+
     plsr = PLSRegression(4, scale=False)
     x_plsr, y_plsr = plsr.fit_transform(pls.X_centered, pls.y)
 
-    plt.scatter(new_x[pls.y == -1, 2], new_x[pls.y == -1, 3], c='red', marker='d')
-    plt.scatter(new_x[pls.y == 1, 2], new_x[pls.y == 1, 3], c='blue', marker='x')
+    plt.scatter(plsr.x_scores_[pls.y == 1, 0], plsr.x_scores_[pls.y == 1, 1], c='red', marker='d')
+    plt.scatter(plsr.x_scores_[pls.y == -1, 0], plsr.x_scores_[pls.y == -1, 1], c='blue', marker='x')
     x = np.linspace(-2, 2, 100)
 
-    print(new_x[:5, :])
-    print(x_plsr[:5, :])
-    print('W: {}'.format(pls.W))
-    print('T: {}'.format(pls.T.shape))
-    print('P: {}'.format(pls.P))
-    print('q: {}'.format(pls.q))
-    print('----------------')
-    print('Xload: {}'.format(plsr.x_loadings_))
-    print('yload: {}'.format(plsr.y_loadings_))
-    print('xw: {}'.format(plsr.x_weights_))
-    print('yw: {}'.format(plsr.y_weights_))
-    print('xr: {}'.format(plsr.x_rotations_))
-    print('yr: {}'.format(plsr.y_rotations_))
+    # print('W:\n {}'.format(pls.W))
+    # print('xw:\n {}'.format(plsr.x_weights_))
+    # print('T:\n {}'.format(pls.T))
+    # print('Xload:\n {}'.format(plsr.x_loadings_))
+    # print('P:\n {}'.format(pls.P))
+    # print('q:\n {}'.format(pls.q))
+    # print('----------------')
+    #
+    # print('yload:\n {}'.format(plsr.y_loadings_))
+    #
+    # print('yw:\n {}'.format(plsr.y_weights_))
+    # print('x_scores:\n {}'.format(plsr.x_scores_))
+    # print('y_scores:\n {}'.format(plsr.y_scores_))
+    # print('xr:\n {}'.format(plsr.x_rotations_))
+    # print('yr:\n {}'.format(plsr.y_rotations_))
+    for i in range(4):
+        print('T:\n min: {}, median: {}, max: {}'.format(np.min(pls.T[:, i]), np.median(pls.T[:, i]), np.max(pls.T[:, i])))
 
-    plt.plot(x, np.mean(pls.b[3])*x, 'k.-', linewidth=4)
-    plt.plot(x, plsr.coef_[3]*x, 'y.-')
-    plt.show()
+
+    plt.plot(x, np.mean(pls.b[2])*x, 'k.-', linewidth=4)
+    plt.plot(x, plsr.coef_[2]*x, 'y.-')
+    # plt.show()

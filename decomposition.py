@@ -53,7 +53,7 @@ class PcaWithScaling(DataHandler):
         self.mean = None
         self.mode_number = 0
         self.number_of_std = 1
-        self.extremes = np.zeros((self.number_of_components*2, self.components.shape[1]))
+        self.extremes = np.zeros((self.number_of_components*2, self.X.shape[1]))
 
     def decompose_with_pca(self):
         """
@@ -80,6 +80,30 @@ class PcaWithScaling(DataHandler):
 
     def get_weighted_mode(self, weight=np.array(1)):
         return weight * self.components[self.mode_number, :]
+
+    def get_n_main_modes(self, weights=np.ones(9)):
+        assert 1 < len(weights) < self.components.shape[0], \
+            ('Too many weights provided\n'
+             'len(weights): {}, n_components: {})').format(len(weights), self.components.shape[0])
+        return self.components[:len(weights), :] * weights
+    # TODO: sum the modes before returning them!
+    
+    def get_sds(self):
+        return np.std(self.transformed_X, axis=0)
+
+    def get_random_weights(self, sds, n_sd):
+        return np.random.uniform(-n_sd * sds, n_sd * sds)
+
+    def get_random_combination_of_modes(self, n_samples=1000, n_sd=2, n_modes=9):
+        deformation_vectors = np.zeros(n_samples, )
+        sds = self.get_sds()[:n_modes]
+        for sample in range(n_samples):
+            random_weights = self.get_random_weights(sds, n_sd)
+            combination_of_modes = np.sum(random_weights, axis=0)
+            print(combination_of_modes.shape)
+            deformation_vectors[sample, :] = self.get_n_main_modes(random_weights)
+
+        print(deformation_vectors)
 
     def get_extremes_of_mode(self, mode_number=0):
         """
@@ -205,8 +229,8 @@ class PLSBinaryClassification(DataHandler):
         assert np.all(self.count_balance * np.mean(self.X_centered[self.y == 1, :], axis=0) -
                       np.mean(self.X_centered, axis=0) <= 10.0e-9), \
             'Classes are not centered properly. Check X centering rules.\n {}' \
-            .format(self.count_balance * np.mean(self.X_centered[self.y == 1, :], axis=0) -
-                    np.mean(self.X_centered, axis=0))
+                .format(self.count_balance * np.mean(self.X_centered[self.y == 1, :], axis=0) -
+                        np.mean(self.X_centered, axis=0))
 
         if method == 'da':
             self.get_pls_factors_binary(self.X_centered, self.y)
@@ -242,47 +266,48 @@ class PLSBinaryClassification(DataHandler):
 if __name__ == "__main__":
 
     path_to_data = os.path.join(str(Path.home()), 'Deformetrica', 'deterministic_atlas_ct',
-                                'output_separate_tmp10_def10_prttpe8_aligned')
+                                'output_separate_tmp10_def10_prttpe13_aligned', 'Decomposition')
     data_filename = 'DeterministicAtlas__EstimatedParameters__Momenta_Table.csv'
     # -----PCA testing-------------------------------------------------------------------------------------------------
-    # momenta_pca = PcaWithScaling(path_to_data, data_filename)
-    # momenta_pca.decompose_with_pca()
+    momenta_pca = PcaWithScaling(path_to_data, data_filename)
+    momenta_pca.decompose_with_pca()
+    momenta_pca.get_random_combination_of_modes()
     # momenta_pca.get_all_extremes(3)
     # momenta_pca.save_all_decomposition_results()
-    # print('components shape: {}'.format(momenta_pca.components.shape))
-    # print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
-    # print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
-    # print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
-    # print('Mean max and mix: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
+    print('components shape: {}'.format(momenta_pca.components.shape))
+    print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
+    print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
+    print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
+    print('Mean max and mix: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
 
-    # plt.bar([*range(len(momenta_pca.normalized_explained_variance))], momenta_pca.normalized_explained_variance,
-    #         alpha=0.7)
-    # plt.plot(momenta_pca.cumulative_variance, 'r-.')
-    # plt.axvline(5)
-    # plt.axvline(6)
-    # plt.axvline(7)
-    # plt.axhline(0.8)
-    # plt.show()
+    plt.bar([*range(len(momenta_pca.normalized_explained_variance))], momenta_pca.normalized_explained_variance,
+            alpha=0.7)
+    plt.plot(momenta_pca.cumulative_variance, 'r-.')
+    plt.axvline(5)
+    plt.axvline(6)
+    plt.axvline(7)
+    plt.axhline(0.8)
+    plt.show()
 
-    # plt.scatter(momenta_pca.transformed_X[:,0], momenta_pca.transformed_X[:,1])
-    # plt.xlabel('Mode 1')
-    # plt.ylabel('Mode 2')
-    # plt.show()
+    plt.scatter(momenta_pca.transformed_X[:,0], momenta_pca.transformed_X[:,1])
+    plt.xlabel('Mode 1')
+    plt.ylabel('Mode 2')
+    plt.show()
     # ------------------------------------------------------------------------------------------------------------------
 
     # -----PLS testing--------------------------------------------------------------------------------------------------
-    data, target = load_iris(return_X_y=True)
-    data = data[0:80, 0:3]
-    target = target[0:80]
-    pls = PLSBinaryClassification(X=data, y=target)
-    pls.decompose_with_pls(method='da')
-
-    plsr = PLSRegression(3, scale=False)
-    x_plsr, y_plsr = plsr.fit_transform(pls.X_centered, pls.y)
-
-    plt.scatter(plsr.x_scores_[pls.y == 1, 0], plsr.x_scores_[pls.y == 1, 1], c='red', marker='d')
-    plt.scatter(plsr.x_scores_[pls.y == -1, 0], plsr.x_scores_[pls.y == -1, 1], c='blue', marker='x')
-    x = np.linspace(-2, 2, 100)
+    # data, target = load_iris(return_X_y=True)
+    # data = data[0:80, 0:3]
+    # target = target[0:80]
+    # pls = PLSBinaryClassification(X=data, y=target)
+    # pls.decompose_with_pls(method='da')
+    #
+    # plsr = PLSRegression(3, scale=False)
+    # x_plsr, y_plsr = plsr.fit_transform(pls.X_centered, pls.y)
+    #
+    # plt.scatter(plsr.x_scores_[pls.y == 1, 0], plsr.x_scores_[pls.y == 1, 1], c='red', marker='d')
+    # plt.scatter(plsr.x_scores_[pls.y == -1, 0], plsr.x_scores_[pls.y == -1, 1], c='blue', marker='x')
+    # x = np.linspace(-2, 2, 100)
 
     # print('W:\n {}'.format(pls.W))
     # print('xw:\n {}'.format(plsr.x_weights_))
@@ -299,11 +324,11 @@ if __name__ == "__main__":
     # print('y_scores:\n {}'.format(plsr.y_scores_))
     # print('xr:\n {}'.format(plsr.x_rotations_))
     # print('yr:\n {}'.format(plsr.y_rotations_))
-    pls.T -= np.mean(pls.T, axis=0)
-    for i in range(3):
-        print('T:\n min: {}, median: {}, mean:{}, max: {}'.format(np.min(pls.T[:, i]), np.median(pls.T[:, i]),
-                                                                  np.mean(pls.T[:, i]), np.max(pls.T[:, i])))
-
-    plt.plot(x, np.mean(pls.b[2])*x, 'k.-', linewidth=4)
-    plt.plot(x, plsr.coef_[2]*x, 'y.-')
+    # pls.T -= np.mean(pls.T, axis=0)
+    # for i in range(3):
+    #     print('T:\n min: {}, median: {}, mean:{}, max: {}'.format(np.min(pls.T[:, i]), np.median(pls.T[:, i]),
+    #                                                               np.mean(pls.T[:, i]), np.max(pls.T[:, i])))
+    #
+    # plt.plot(x, np.mean(pls.b[2])*x, 'k.-', linewidth=4)
+    # plt.plot(x, plsr.coef_[2]*x, 'y.-')
     # plt.show()

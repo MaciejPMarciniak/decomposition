@@ -85,25 +85,24 @@ class PcaWithScaling(DataHandler):
         assert 1 < len(weights) < self.components.shape[0], \
             ('Too many weights provided\n'
              'len(weights): {}, n_components: {})').format(len(weights), self.components.shape[0])
-        return self.components[:len(weights), :] * weights
+        return np.sum(self.components[:len(weights), :].T * weights, axis=1)
+
     # TODO: sum the modes before returning them!
-    
+
     def get_sds(self):
         return np.std(self.transformed_X, axis=0)
 
-    def get_random_weights(self, sds, n_sd):
+    @staticmethod
+    def get_random_weights(sds, n_sd):
         return np.random.uniform(-n_sd * sds, n_sd * sds)
 
     def get_random_combination_of_modes(self, n_samples=1000, n_sd=2, n_modes=9):
-        deformation_vectors = np.zeros(n_samples, )
+        deformation_vectors = np.zeros((n_samples, self.components.shape[1]))
         sds = self.get_sds()[:n_modes]
         for sample in range(n_samples):
             random_weights = self.get_random_weights(sds, n_sd)
-            combination_of_modes = np.sum(random_weights, axis=0)
-            print(combination_of_modes.shape)
             deformation_vectors[sample, :] = self.get_n_main_modes(random_weights)
-
-        print(deformation_vectors)
+        self.save_result('Randomly_weighted_modes.csv', deformation_vectors)
 
     def get_extremes_of_mode(self, mode_number=0):
         """
@@ -278,7 +277,7 @@ if __name__ == "__main__":
     print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
     print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
     print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
-    print('Mean max and mix: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
+    print('Mean max and min: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
 
     plt.bar([*range(len(momenta_pca.normalized_explained_variance))], momenta_pca.normalized_explained_variance,
             alpha=0.7)

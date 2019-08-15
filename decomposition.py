@@ -31,7 +31,7 @@ class DataHandler:
                                                         'not the same. Check the input data.')
 
     def save_result(self, output_filename=None, data_to_save=None):
-        output_directory = os.path.join(self.covariates_data_path, 'Decomposition')
+        output_directory = self.covariates_data_path
         if not os.path.isdir(output_directory):
             os.makedirs(output_directory)
         np.savetxt(os.path.join(output_directory, output_filename), data_to_save, delimiter=',')
@@ -90,19 +90,23 @@ class PcaWithScaling(DataHandler):
     # TODO: sum the modes before returning them!
 
     def get_sds(self):
-        return np.std(self.transformed_X, axis=0)
+        return np.sqrt(momenta_pca.explained_variance)
 
     @staticmethod
     def get_random_weights(sds, n_sd):
-        return np.random.uniform(-n_sd * sds, n_sd * sds)
+        # Uniform distribution
+        # return np.random.uniform(-n_sd * sds, n_sd * sds)
+        # Normal distribution
+        return np.random.normal(0, sds, 9)
 
     def get_random_combination_of_modes(self, n_samples=1000, n_sd=2, n_modes=9):
-        deformation_vectors = np.zeros((n_samples, self.components.shape[1]))
+        deformation_vectors = np.zeros((25, self.components.shape[1]))
         sds = self.get_sds()[:n_modes]
-        for sample in range(n_samples):
+        for sample in range(n_samples+1):
             random_weights = self.get_random_weights(sds, n_sd)
-            deformation_vectors[sample, :] = self.get_n_main_modes(random_weights)
-        self.save_result('Randomly_weighted_modes.csv', deformation_vectors)
+            deformation_vectors[sample % 25, :] = self.get_n_main_modes(random_weights)
+            if sample % 25 == 0 and sample > 0:
+                self.save_result('Randomly_weighted_modes_{}.csv'.format(int(sample/25)), deformation_vectors)
 
     def get_extremes_of_mode(self, mode_number=0):
         """
@@ -114,7 +118,10 @@ class PcaWithScaling(DataHandler):
         standard deviations in the provided mode.
         """
         self.mode_number = mode_number
-        weight = self.number_of_std * np.std(self.transformed_X[self.mode_number, :])
+        sds = self.get_sds()
+        weight = self.number_of_std * sds[self.mode_number]
+        print(weight)
+
         positive_extreme = self.get_weighted_mode(weight).reshape((1, -1))
         negative_extreme = -positive_extreme
         return np.concatenate((positive_extreme, negative_extreme), axis=0)
@@ -265,30 +272,30 @@ class PLSBinaryClassification(DataHandler):
 if __name__ == "__main__":
 
     path_to_data = os.path.join(str(Path.home()), 'Deformetrica', 'deterministic_atlas_ct',
-                                'output_separate_tmp10_def10_prttpe13_aligned', 'Decomposition')
-    data_filename = 'DeterministicAtlas__EstimatedParameters__Momenta_Table.csv'
+                                'output_separate_tmp10_def10_prttpe13_corrected', 'Decomposition')
+    data_filename = 'Momenta_Table.csv'
     # -----PCA testing-------------------------------------------------------------------------------------------------
     momenta_pca = PcaWithScaling(path_to_data, data_filename)
     momenta_pca.decompose_with_pca()
-    momenta_pca.get_random_combination_of_modes()
+    momenta_pca.get_random_combination_of_modes(n_sd=3)
     # momenta_pca.get_all_extremes(3)
     # momenta_pca.save_all_decomposition_results()
     print('components shape: {}'.format(momenta_pca.components.shape))
     print('mean Components : {}'.format(np.mean(momenta_pca.components[17, :])))
     print('std components: {}'.format(np.std(momenta_pca.transformed_X, axis=1)))
-    print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:8]))
+    print('Cumulative variance: {}'.format(momenta_pca.cumulative_variance[:9]))
     print('Mean max and min: {}  {}'.format(max(momenta_pca.mean), min(momenta_pca.mean)))
+    print('Explained variance: {}'.format(momenta_pca.explained_variance))
+    print('Stds from variance: {}'.format(np.sqrt(momenta_pca.explained_variance)))
 
     plt.bar([*range(len(momenta_pca.normalized_explained_variance))], momenta_pca.normalized_explained_variance,
             alpha=0.7)
     plt.plot(momenta_pca.cumulative_variance, 'r-.')
-    plt.axvline(5)
-    plt.axvline(6)
-    plt.axvline(7)
-    plt.axhline(0.8)
+    plt.axvline(8)
+    plt.axhline(0.9)
     plt.show()
 
-    plt.scatter(momenta_pca.transformed_X[:,0], momenta_pca.transformed_X[:,1])
+    plt.scatter(momenta_pca.transformed_X[:, 0], momenta_pca.transformed_X[:,1])
     plt.xlabel('Mode 1')
     plt.ylabel('Mode 2')
     plt.show()

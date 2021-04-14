@@ -95,6 +95,9 @@ class PcaWithScaling(DataHandler):
                 self.save_dataframe('Cases_weights_{}.csv'.format(int(sample/25)), df_mode_weights)
                 df_mode_weights.drop(df_mode_weights.index, inplace=True)
 
+    def get_concrete_mode_combination(self, weights):
+
+
     def get_extremes_of_mode(self, mode_number=0):
         """
         Calculates extreme loadings along a given mode. Useful for statistical shape analysis.
